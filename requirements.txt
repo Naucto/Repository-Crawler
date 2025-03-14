@@ -1,0 +1,2 @@
+PyGithub==2.6.1
+loguru==0.7.3
