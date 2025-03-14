@@ -25,5 +25,6 @@ elif not target:
 
 crawler = Crawler(token, source, target)
 crawler.crawl()
+crawler.commit()
 
 L.info("Done working with GitHub. Goodbye!")
