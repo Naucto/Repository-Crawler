@@ -84,7 +84,7 @@ class Crawler:
 
             item_path = os.path.join(self.target_directory.name, item)
             if os.path.isdir(item_path):
-                os.rmdir(item_path)
+                shutil.rmtree(item_path)
             else:
                 os.remove(item_path)
 
@@ -103,6 +103,11 @@ class Crawler:
                 shutil.copy2(item_path, target_path)
 
         target_repo.index.add("*")
+
+        if not target_repo.index.diff("HEAD"):
+            L.info("No changes detected, not commiting to target repository")
+            return
+
         L.debug("Added all files to the index, {} files in total", len(target_repo.index.entries))
 
         target_commit_summary: str = ""
