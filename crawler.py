@@ -154,7 +154,7 @@ class Crawler:
     """.strip()
 
             if rename_changes:
-                target_commit_summary += f"Files renamed: {', '.join(rename_changes)}\n"
+                target_commit_summary += f"\nFiles renamed: {', '.join(rename_changes)}\n"
         else:
             L.debug("Target repository has no commits, using default commit summary")
             target_commit_summary = "Initial commit"
