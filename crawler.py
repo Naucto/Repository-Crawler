@@ -166,7 +166,7 @@ class Crawler:
 
         target_repo.index.commit(
             message=target_commit_message,
-            author=Actor("Naucto's Repository Crawler", "bot@naucto.net")
+            author=Actor("Naucto's Repository Crawler", "contact@naucto.net")
         )
         L.info("Committed changes to target repository under hash {}", target_repo.head.commit.hexsha)
         
