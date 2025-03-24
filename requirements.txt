@@ -2,4 +2,4 @@ PyGithub==2.6.1
 GitPython==3.1.44
 loguru==0.7.3
 Flask==3.1.0
-pyOpenSSL==25.0.0
+gevent==24.11.1

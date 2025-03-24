@@ -14,7 +14,8 @@ token  = os.getenv("CW_GITHUB_TOKEN")
 source = os.getenv("CW_GITHUB_SOURCE")
 target = os.getenv("CW_GITHUB_TARGET")
 
-host = bool(os.getenv("CW_HOST", None))
+host      = bool(os.getenv("CW_HOST", None))
+host_cert = os.getenv("CW_HOST_CERT", None)
 
 if host:
     L.info("Starting as a self-sustaining updater through a webhook endpoint.")
@@ -32,7 +33,14 @@ elif not target:
 crawler = Crawler(token, source, target)
 
 if host:
-    listener = WebhookListener(crawler)
+    if not host_cert:
+        L.error("No HTTPS certificate path provided. Please set `CW_HOST_CERT` and try agian.")
+        exit(1)
+
+    host_cert_base = os.path.join(host_cert, "cert.pem")
+    host_cert_key  = os.path.join(host_cert, "privkey.pem")
+
+    listener = WebhookListener(crawler, host_cert=(host_cert_base, host_cert_key))
     listener.run()
 else:
     crawler.crawl()

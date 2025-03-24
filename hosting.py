@@ -1,23 +1,23 @@
 from crawler import Crawler
 
 from flask import Flask, request, jsonify
-import flask.cli    
+import flask.cli
+
+from gevent.pywsgi import WSGIServer
+from gevent.ssl import SSLContext
 
 from loguru import logger as L
-import logging
 
 
 class WebhookListener:
-    def __init__(self, crawler: Crawler, host='0.0.0.0', port=1987):
+    def __init__(self, crawler: Crawler, host: str='0.0.0.0', port: str=1987, host_cert: tuple[str, str]=None):
         self._crawler = crawler
         self._app     = Flask(__name__)
 
         self._host = host
         self._port = port
 
-        # Make Flask shush -- we got our own logging messages instead.
-        logging.getLogger('werkzeug').disabled = True
-        flask.cli.show_server_banner = lambda *args: None
+        self._host_cert = host_cert
 
         L.info("The listener is available on {}:{}", host, port)
 
@@ -58,4 +58,20 @@ class WebhookListener:
         L.info("Done setting up the Flask server. I'm ready!")
 
     def run(self):
-        self._app.run(host=self._host, port=self._port, ssl_context='adhoc')
+        certfile = self._host_cert[0]
+        keyfile  = self._host_cert[1]
+
+        L.debug("Using {} as the certificate file", certfile)
+        L.debug("Using {} as the key file", keyfile)
+
+        ssl_context = SSLContext()
+        ssl_context.load_cert_chain(certfile=certfile, keyfile=keyfile)
+
+        server = WSGIServer(
+            (self._host, self._port),
+            self._app,
+            ssl_context=ssl_context,
+            do_handshake_on_connect=False
+        )
+
+        server.serve_forever()
