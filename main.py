@@ -2,9 +2,10 @@
 
 from loguru import logger as L
 
-import os
-
 from crawler import Crawler
+from hosting import WebhookListener
+
+import os
 
 
 L.info("Hello, world from Naucto's Repository Crawler!")
@@ -12,6 +13,11 @@ L.info("Hello, world from Naucto's Repository Crawler!")
 token  = os.getenv("CW_GITHUB_TOKEN")
 source = os.getenv("CW_GITHUB_SOURCE")
 target = os.getenv("CW_GITHUB_TARGET")
+
+host = bool(os.getenv("CW_HOST", None))
+
+if host:
+    L.info("Starting as a self-sustaining updater through a webhook endpoint.")
 
 if not token:
     L.error("No GitHub token provided. Please set `CW_GITHUB_TOKEN` and try again.")
@@ -24,7 +30,12 @@ elif not target:
     exit(1)
 
 crawler = Crawler(token, source, target)
-crawler.crawl()
-crawler.commit()
+
+if host:
+    listener = WebhookListener(crawler)
+    listener.run()
+else:
+    crawler.crawl()
+    crawler.commit()
 
 L.info("Done working with GitHub. Goodbye!")

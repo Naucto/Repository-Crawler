@@ -34,7 +34,7 @@ class Crawler:
         self.gh.close()
         L.info("Done with my work. Goodbye!")
 
-        self.working_directory.cleanup()
+        self.clean_up()
 
     def crawl(self):
         L.info("Gathering repository list from source organization")
@@ -172,3 +172,7 @@ class Crawler:
         
         target_repo.remotes.origin.push()
         L.info("Pushed changes to remote repository")
+
+    def clean_up(self):
+        L.info("Cleaning up working directory")
+        self.working_directory.cleanup()
