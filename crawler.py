@@ -4,6 +4,9 @@ from git import Repo, Actor
 
 import tempfile
 
+from queue import Queue
+from threading import Thread
+
 import os
 import tarfile
 import requests
@@ -24,10 +27,12 @@ class Crawler:
         self.source = source_organization
         self.target = target_repository
 
-        self.working_directory = tempfile.TemporaryDirectory(dir=working_directory_path)
+        self.working_directory_path = working_directory_path
+        self.working_directory = tempfile.TemporaryDirectory(dir=self.working_directory_path)
         L.debug("Working directory is located at {}", self.working_directory.name)
 
-        self.target_directory = tempfile.TemporaryDirectory(dir=target_directory_path)
+        self.target_directory_path = target_directory_path
+        self.target_directory = tempfile.TemporaryDirectory(dir=self.target_directory_path)
         L.debug("Target directory is located at {}", self.target_directory.name)
 
     def __del__(self):
@@ -174,5 +179,37 @@ class Crawler:
         L.info("Pushed changes to remote repository")
 
     def clean_up(self):
-        L.info("Cleaning up working directory")
-        self.working_directory.cleanup()
+        L.info("Cleaning up directories")
+
+        if self.working_directory is not None:
+            self.working_directory.cleanup()
+        if self.target_directory is not None:
+            self.target_directory.cleanup()
+
+
+class CrawlerWorker:
+    def __init__(self, crawler: Crawler):
+        self.crawler = crawler
+
+        self.work_queue = Queue()
+        self.work_thread = Thread(target=self._worker, daemon=True)
+
+        self.work_thread.start()
+        L.info("Webhook worker thread started")
+
+    def _worker(self):
+        while True:
+            context = self.work_queue.get()
+            L.info("Received work task")
+
+            self.crawler.crawl()
+            self.crawler.commit()
+            self.crawler.clean_up()
+
+            L.info("Done working on the task")
+
+    def commit(self, context: any):
+        # TODO: Use actual context data
+        self.work_queue.put(context)
+        L.info("Commited work task")
+

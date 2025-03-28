@@ -1,12 +1,14 @@
-from crawler import Crawler
+from crawler import Crawler, CrawlerWorker
 
 from flask import Flask, request, jsonify
 import flask.cli
 
 from gevent.pywsgi import WSGIServer
-from gevent.ssl import SSLContext
+from gevent import ssl
 
 from loguru import logger as L
+
+import traceback
 
 
 class WebhookListener:
@@ -19,12 +21,16 @@ class WebhookListener:
 
         self._host_cert = host_cert
 
+        self._worker = CrawlerWorker(crawler)
+
         L.info("The listener is available on {}:{}", host, port)
 
         @self._app.errorhandler(Exception)
         def on_error(exception):
             L.error("Unhandled exception occured: {}", exception)
-            return jsonify({})
+            L.trace(traceback.format_exc())
+
+            return jsonify({}), 400
 
         @self._app.post("/")
         def on_push():
@@ -34,7 +40,7 @@ class WebhookListener:
             if github_event != "push":
                 return jsonify({})
 
-            github_event_body  = request.json()
+            github_event_body = request.get_json()
 
             try:
                 github_hash_before = github_event_body["before"]
@@ -45,15 +51,14 @@ class WebhookListener:
 
             L.debug("Push event, commit hashes from {} -> {}", github_hash_before, github_hash_after)
 
+            # TODO: Commit actual data
+            self._worker.commit(None)
+
             if github_event_body["before"] == github_event_body["after"]:
                 L.debug("Ignoring event, the commit hashes are the same")
 
-            crawler.crawl()
-            crawler.commit()
-            crawler.clean_up()
-
             L.debug("Done handling the event, good night.")
-            return {}
+            return jsonify({})
 
         L.info("Done setting up the Flask server. I'm ready!")
 
@@ -64,7 +69,7 @@ class WebhookListener:
         L.debug("Using {} as the certificate file", certfile)
         L.debug("Using {} as the key file", keyfile)
 
-        ssl_context = SSLContext()
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ssl_context.load_cert_chain(certfile=certfile, keyfile=keyfile)
 
         server = WSGIServer(
