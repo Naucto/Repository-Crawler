@@ -31,6 +31,7 @@ EOF
     # ---
 
     cat >&2 <<EOF
+
 The service requires the use of SSL certificates so that GitHub can contact it
 through a webhook. Consequently, this requires an associated domain name for
 this task.
@@ -51,13 +52,14 @@ EOF
     if [ ! -d "$certificates_path" ] || \
        [ ! -f "$certificates_path/cert.pem" ] || \
        [ ! -f "$certificates_path/privkey.pem" ]; then
-        echo "$0: Bad certificates path passed, cannot continue."
+        echo "$0: Bad certificates path passed, cannot continue." >&2
         exit 1
     fi
 
     # ---
 
     cat >&2 <<EOF
+
 The service requires write access to the project owner's student repository.
 Thus, we need to have a fine-grained GitHub token associated to a student
 account.
@@ -71,10 +73,59 @@ Make sure to authenticate your fine-grained GitHub token against the official
 Epitech organization associated with your account.
 
 EOF
-    github_token="$(sv_ask_question "What is the student GitHub token that you want to use?" "")"
+    github_token="$(sv_ask_question "What is the student GitHub token that you want to use?" \
+                                    "")"
 
     if [ -z "$github_token" ]; then
-        echo "$0: No GitHub token provided, cannot continue."
+        echo "$0: No GitHub token provided, cannot continue." >&2
+        exit 1
+    fi
+
+    # ---
+
+    cat >&2 <<EOF
+
+The service needs to know from which GitHub organization you want to synchronize
+the main student repository to.
+
+You do not need to specify the full URL path to it, only the name/identifier of
+that organization. For example, Naucto is located at https://github.com/Naucto,
+so we shall specify 'Naucto' for this question.
+
+EOF
+
+    source_organization="$(sv_ask_question "What is the source GitHub organization you want to sync from?" \
+                                           "Naucto")"
+
+    if [ -z "$source_organization" ]; then
+        echo "$0: No GitHub source organization specified, cannot continue." >&2
+        exit 1
+    fi
+
+    # ---
+    
+    cat >&2 <<EOF
+
+The service needs to know where to store all of the synchronized repositories
+to.
+
+Just like with the previous question, you do not need to specify the full blown
+path to your repository. For example, if your repository is located at the
+following location:
+
+    https://github.com/EpitechPromo2027/G-EIP-600-MPL-6-1-eip-alexis.belmonte
+
+You only need to specify the following path:
+
+    EpitechPromo2027/G-EIP-600-MPL-6-1-eip-alexis.belmonte
+
+EOF
+
+    target_repository="$(sv_ask_question "What is the target GitHub student repository you want to sync to?" \
+                                         "EpitechPromo2027/G-EIP-600-MPL-6-1-eip-alexis.belmonte")"
+
+    if [ -z "$target_repository" ]; then
+        echo "$0: No GitHub target repository specified, cannot continue." >&2
         exit 1
     fi
 }
