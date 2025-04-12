@@ -8,8 +8,12 @@ SV_TEMP_PATH="$SV_REPO_PATH/.repo"
 
 SV_SERVICE_NAME="naucto-repository-crawler"
 SV_SERVICE_PATH="/etc/systemd/system/$SV_SERVICE_NAME.service"
-SV_SERVICE_ENV_PATH="$SV_INSTALL_PATH/.config"
-SV_SERVICE_VENV_PATH="$SV_INSTALL_PATH/.env"
+SV_SERVICE_SCRIPT_FNAME="service.sh"
+SV_SERVICE_SCRIPT_PATH="$SV_INSTALL_PATH/$SV_SERVICE_SCRIPT_FNAME"
+SV_SERVICE_ENV_FNAME=".config"
+SV_SERVICE_ENV_PATH="$SV_INSTALL_PATH/$SV_SERVICE_ENV_FNAME"
+SV_SERVICE_VENV_FNAME=".env"
+SV_SERVICE_VENV_PATH="$SV_INSTALL_PATH/$SV_SERVICE_VENV_FNAME"
 
 sv_require()
 {
@@ -233,7 +237,7 @@ ConditionPathExists=$SV_INSTALL_PATH
 
 [Service]
 EnvironmentFile=$SV_SERVICE_ENV_PATH
-ExecStart=$SV_INSTALL_PATH/service.sh
+ExecStart=$SV_SERVICE_SCRIPT_PATH
 KillMode=process
 Restart=on-failure
 
@@ -255,7 +259,7 @@ EOF
 
     sv_status_show "Installing the service script file"
 
-    cat >"$SV_INSTALL_PATH/service.sh" <<EOF
+    cat >"$SV_SERVICE_SCRIPT_PATH" <<EOF
 #!/bin/sh
 
 SV_INSTALL_PATH="\`dirname "\$0"\`"
@@ -289,6 +293,8 @@ EOF
     sv_try "Check if the service is alive and well on the machine." \
            "$tool_systemctl is-active $SV_SERVICE_NAME"
 
+    sv_status_show ""
+
     cat <<EOF
 
 Congratulations! The Naucto Repository Crawler service is now up and running on
@@ -304,6 +310,64 @@ We hope that it will satisfy you, just as much as it satisfies us! :]
 EOF
 }
 
+sv_action_update()
+{
+    if [ ! -f "$SV_SERVICE_ENV_PATH" ]; then
+        echo "$0: The service is not installed on this system."
+        exit 1
+    fi
+
+    sv_status_show "Stopping the executing service if it is still running"
+    $tool_systemctl stop "$SV_SERVICE_NAME" >/dev/null 2>/dev/null
+
+    sv_status_show "Saving virtual Python environment and settings"
+    save_dir_path="`mktemp -d`"
+    if [ -z "$save_dir_path" ]; then
+        echo "$0: Failed to create a temporary path to save the virtual environment and settings, cannot continue."
+        exit 1
+    fi
+
+    cp -r "$SV_SERVICE_ENV_PATH" "$SV_SERVICE_VENV_PATH" "$SV_SERVICE_SCRIPT_PATH" "$save_dir_path"
+
+    sv_status_show "Cleaning-up old installation directory"
+    sv_try "Clean old installation directory to prepare new installation. Settings and virtual environment are located at '$save_dir_path'." \
+           "rm -rf '$SV_INSTALL_PATH'"
+
+    sv_status_show "Downloading service repository and copying it in $SV_INSTALL_PATH"
+
+    sv_try_as "$tool_su" "$sv_repo_userowner" "Clone the service repository to a temporary path." \
+              "$tool_git clone '$sv_repo_url' '$SV_TEMP_PATH'"
+
+    sv_try "Move the cloned repository to the installation path" \
+           "mv '$SV_TEMP_PATH' '$SV_INSTALL_PATH'"
+
+    sv_status_show "Moving back the virtual Python environment and settings"
+
+    sv_try "Move back the virtual Python environment and settings in the installation location." \
+           "mv '$save_dir_path/$SV_SERVICE_ENV_FNAME' '$SV_SERVICE_ENV_PATH' && mv '$save_dir_path/$SV_SERVICE_VENV_FNAME' '$SV_SERVICE_VENV_PATH' && mv '$save_dir_path/$SV_SERVICE_SCRIPT_FNAME' '$SV_SERVICE_SCRIPT_PATH'"
+    sv_try "Remove temporary directory that contained the virtual Python environment and settings." \
+           "rm -rf '$save_dir_path'"
+
+    sv_status_show "Updating the virtual Python environment"
+
+    sv_try "Update dependencies in the virtual Python environment." \
+           ". $SV_SERVICE_VENV_PATH/bin/activate && pip install -r '$SV_INSTALL_PATH/requirements.txt'"
+
+    sv_status_show "Starting back the service"
+
+    sv_try "Start the service back after updating it" \
+           "$tool_systemctl start '$SV_SERVICE_NAME'"
+    sv_try "Check if the service is alive and well on the machine." \
+           "$tool_systemctl is-active $SV_SERVICE_NAME"
+
+    cat <<EOF
+
+Done updating the service, and now back online!
+
+Report any issues here: https://github.com/Naucto/Repository-Crawler/issues
+EOF
+}
+
 sv_action_uninstall()
 {
     echo "Not yet implemented"
@@ -311,6 +375,11 @@ sv_action_uninstall()
 }
 
 # ---
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "$0: This script requires administrative privileges." >&2
+    exit 1
+fi
 
 cd "$SV_REPO_PATH"
 
@@ -395,10 +464,15 @@ Commands:
 
     install         Install the Naucto Repository Crawler as a systemd-based
                     service on the current system.
-
                     This will duplicate the contents of the repository to the
                     installation path, create a systemd service file for it
                     and ask the user a few questions to configure it
+
+    update          Performs an unconditionnal update to the service.
+                    This fetches a new copy of the repository and installs it
+                    without losing the specified settings during installation.
+                    This verb can also be used to repair an installation if
+                    it broke in most situations.
 
     uninstall       Remove the aforementioned service from the system.
 EOF
@@ -406,14 +480,14 @@ EOF
     exit 1
 fi
 
-if [ "$(id -u)" -ne 0 ]; then
-    echo "$0: This script requires administrative privileges." >&2
-    exit 1
-fi
-
 case "$primary_command" in
     install)
         sv_action_install $@
+        exit $?
+        ;;
+
+    update)
+        sv_action_update $@
         exit $?
         ;;
 
