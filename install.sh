@@ -142,8 +142,7 @@ EOF
 
     # ---
 
-    if ! id -u "$SV_SERVICE_USER" >/dev/null 2>/dev/null; then
-        cat >&2 <<EOF
+    cat >&2 <<EOF
 
 As we indirectly use 'git' and 'ssh' by extension, we require the service to
 have a SSH private key.
@@ -159,17 +158,16 @@ outsiders that use the hosted service through HTTPS.
 
 EOF
 
-        private_key_path="$(sv_question "Where is the SSH private key located?" \
-                                        "")"
+    private_key_path="$(sv_question "Where is the SSH private key located?" \
+                                    "")"
 
-        if [ -z "$private_key_path" ] || \
-           [ ! -f "$private_key_path" ]; then
-            echo "$0: Bad SSH private key path passed, cannot continue." >&2
-            exit 1
-        fi
-
-        private_key_path="`realpath "$private_key_path"`"
+    if [ -z "$private_key_path" ] || \
+       [ ! -f "$private_key_path" ]; then
+        echo "$0: Bad SSH private key path passed, cannot continue." >&2
+        exit 1
     fi
+
+    private_key_path="`realpath "$private_key_path"`"
 
     cat >&2 <<EOF
 
@@ -286,7 +284,6 @@ After=network.target
 ConditionPathExists=$SV_INSTALL_PATH
 
 [Service]
-User=$SV_SERVICE_USER
 EnvironmentFile=$SV_SERVICE_ENV_PATH
 ExecStart=$SV_SERVICE_SCRIPT_PATH
 KillMode=process
@@ -332,8 +329,8 @@ EOF
 
     sv_status_show "Configuring filesystem permissions"
 
-    sv_try "Set ownership of the service installation location to $SV_SERVICE_USER" \
-           "chown -R '$SV_SERVICE_USER:$SV_SERVICE_USER' '$SV_INSTALL_PATH'"
+    sv_try "Set ownership of the service installation location to $SV_SERVICE_USER:root" \
+           "chown -R '$SV_SERVICE_USER:root' '$SV_INSTALL_PATH'"
     sv_try "Set permissions of the service installation location" \
            "chmod -R 700 '$SV_INSTALL_PATH'"
 

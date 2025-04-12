@@ -6,7 +6,10 @@ from crawler import Crawler
 from hosting import WebhookListener
 
 import os
+import pwd
 
+
+CW_TARGET_USER = "nrc"
 
 L.info("Hello, world from Naucto's Repository Crawler!")
 
@@ -16,6 +19,18 @@ target = os.getenv("CW_GITHUB_TARGET")
 
 host      = bool(os.getenv("CW_HOST", None))
 host_cert = os.getenv("CW_HOST_CERT", None)
+
+if os.getuid() != 0:
+    L.error("Naucto's Repository Crawler must start as root.")
+
+try:
+    ncr_pwnam = pwd.getpwnam(CW_TARGET_USER)
+except KeyError:
+    L.error("User '{}' does not exist on the system, cannot continue.")
+
+os.setgid(ncr_pwnam.pw_gid)
+os.setuid(ncr_pwnam.pw_uid)
+L.info("Switching active user to '{}'", CW_TARGET_USER)
 
 if host:
     L.info("Starting as a self-sustaining updater through a webhook endpoint.")
