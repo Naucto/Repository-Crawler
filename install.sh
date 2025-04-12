@@ -1,13 +1,15 @@
 #!/bin/sh
 
-SV_INSTALL_PATH="/opt/naucto-repository-crawler"
 SV_REPO_PATH="`dirname "$0"`"
+
+SV_INSTALL_PATH="/opt/naucto-repository-crawler"
 SV_LOCK_PATH="$SV_REPO_PATH/.`basename "$0"`.lock"
 SV_TEMP_PATH="$SV_REPO_PATH/.repo"
 
 SV_SERVICE_NAME="naucto-repository-crawler"
 SV_SERVICE_PATH="/etc/systemd/system/$SV_SERVICE_NAME.service"
-SV_SERVICE_ENV_PATH="$SV_INSTALL_PATH/.env"
+SV_SERVICE_ENV_PATH="$SV_INSTALL_PATH/.config"
+SV_SERVICE_VENV_PATH="$SV_INSTALL_PATH/.env"
 
 sv_require()
 {
@@ -231,7 +233,7 @@ ConditionPathExists=$SV_INSTALL_PATH
 
 [Service]
 EnvironmentFile=$SV_SERVICE_ENV_PATH
-ExecStart=$SV_INSTALL_PATH/service.sh start
+ExecStart=$SV_INSTALL_PATH/service.sh
 KillMode=process
 Restart=on-failure
 
@@ -242,7 +244,7 @@ EOF
     sv_status_show "Installing the environment file"
 
     cat >"$SV_SERVICE_ENV_PATH" <<EOF
-LOGURU_LEVEL=TRACE
+LOGURU_LEVEL=INFO
 
 CW_HOST=1
 CW_HOST_CERT=$certificates_path
@@ -250,6 +252,28 @@ CW_GITHUB_TOKEN=$github_token
 CW_GITHUB_SOURCE=$source_organization
 CW_GITHUB_TARGET=$target_repository
 EOF
+
+    sv_status_show "Installing the service script file"
+
+    cat >"$SV_INSTALL_PATH/service.sh" <<EOF
+#!/bin/sh
+
+SV_INSTALL_PATH="\`dirname "\$0"\`"
+SV_ENV_PATH="$SV_SERVICE_VENV_PATH"
+
+. "\$SV_ENV_PATH/bin/activate"
+
+python3 "$SV_INSTALL_PATH/main.py"
+EOF
+    chmod +x "$SV_INSTALL_PATH/service.sh"
+
+    sv_status_show "Initializing the Python virtual environment"
+
+    sv_try "Initialize a virtual Python environment in the installation path." \
+           "$tool_python -m venv $SV_SERVICE_VENV_PATH"
+
+    sv_try "Install dependencies in the virtual Python environment." \
+           ". $SV_SERVICE_VENV_PATH/bin/activate && pip install -r '$SV_INSTALL_PATH/requirements.txt'"
 
     sv_status_show "Notifying systemd that a new service has been installed"
 
@@ -260,8 +284,24 @@ EOF
 
     sv_try "Enable the service to automatically start at boot-up." \
            "$tool_systemctl enable $SV_SERVICE_NAME"
-    sv_try "Start the service to check the installation correctness." \
-           "$tool_systemctl enable $SV_SERVICE_NAME"
+    sv_try "Start the service on the machine." \
+           "$tool_systemctl start $SV_SERVICE_NAME"
+    sv_try "Check if the service is alive and well on the machine." \
+           "$tool_systemctl is-active $SV_SERVICE_NAME"
+
+    cat <<EOF
+
+Congratulations! The Naucto Repository Crawler service is now up and running on
+your machine.
+
+You may update or uninstall this service by using this installer script again
+with a different verb, in the installation location or where you just executed
+this script.
+
+Report any issues here: https://github.com/Naucto/Repository-Crawler/issues
+
+We hope that it will satisfy you, just as much as it satisfies us! :]
+EOF
 }
 
 sv_action_uninstall()
@@ -277,7 +317,12 @@ cd "$SV_REPO_PATH"
 tool_git="`sv_require git "This installer uses Git to keep this software up-to-date. Please install it."`"
 tool_systemctl="`sv_require systemctl "This installer does not support non-systemd environments."`"
 tool_su="`sv_require su "This installer requires to switch back-and-forth between a regular & root account to e.g. update the service."`"
-[ -z "$tool_git" ] || [ -z "$tool_systemctl" ] && exit 1
+tool_python="`sv_require python3 "The service requires Python 3.11+ along with venv + pip support to run on this machine"`"
+
+[ -z "$tool_git" ] || \
+[ -z "$tool_systemctl" ] || \
+[ -z "$tool_su" ] || \
+[ -z "$tool_python" ] && exit 1
 
 sv_status_show "Determining installation source repository user owner"
 sv_repo_userowner="`stat -c "%U" "$SV_REPO_PATH/.git" 2>/dev/null`"
@@ -362,7 +407,7 @@ EOF
 fi
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "$0: this script requires administrative privileges." >&2
+    echo "$0: This script requires administrative privileges." >&2
     exit 1
 fi
 
@@ -375,5 +420,10 @@ case "$primary_command" in
     uninstall)
         sv_action_uninstall $@
         exit $?
+        ;;
+
+    *)
+        echo "$0: Action '$primary_command' does not exist." >&2
+        exit 1
         ;;
 esac
