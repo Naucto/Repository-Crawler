@@ -37,7 +37,7 @@ if host:
         L.error("No HTTPS certificate path provided. Please set `CW_HOST_CERT` and try agian.")
         exit(1)
 
-    host_cert_base = os.path.join(host_cert, "cert.pem")
+    host_cert_base = os.path.join(host_cert, "fullchain.pem")
     host_cert_key  = os.path.join(host_cert, "privkey.pem")
 
     listener = WebhookListener(crawler, host_cert=(host_cert_base, host_cert_key))
