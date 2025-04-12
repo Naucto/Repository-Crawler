@@ -6,10 +6,7 @@ from crawler import Crawler
 from hosting import WebhookListener
 
 import os
-import pwd
 
-
-CW_TARGET_USER = "nrc"
 
 L.info("Hello, world from Naucto's Repository Crawler!")
 
@@ -36,9 +33,6 @@ elif not target:
 crawler = Crawler(token, source, target)
 
 if host:
-    if os.getuid() != 0:
-        L.error("Naucto's Repository Crawler must start as root when running as a host.")
-
     if not host_cert:
         L.error("No HTTPS certificate path provided. Please set `CW_HOST_CERT` and try agian.")
         exit(1)
@@ -47,16 +41,6 @@ if host:
     host_cert_key  = os.path.join(host_cert, "privkey.pem")
 
     listener = WebhookListener(crawler, host_cert=(host_cert_base, host_cert_key))
-
-    try:
-        ncr_pwnam = pwd.getpwnam(CW_TARGET_USER)
-    except KeyError:
-        L.error("User '{}' does not exist on the system, cannot continue.")
-
-    os.setgid(ncr_pwnam.pw_gid)
-    os.setuid(ncr_pwnam.pw_uid)
-    L.info("Switching active user to '{}'", CW_TARGET_USER)
-
     listener.run()
 else:
     crawler.crawl()

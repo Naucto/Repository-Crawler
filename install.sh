@@ -3,6 +3,8 @@
 SV_REPO_PATH="`dirname "$0"`"
 
 SV_INSTALL_PATH="/opt/naucto-repository-crawler"
+SV_INSTALL_DEFAULT_CERT_FNAME="cert"
+SV_INSTALL_DEFAULT_CERT_PATH="$SV_INSTALL_PATH/$SV_INSTALL_DEFAULT_CERT_FNAME"
 SV_LOCK_PATH="$SV_REPO_PATH/.`basename "$0"`.lock"
 SV_TEMP_PATH="$SV_REPO_PATH/.repo"
 
@@ -118,6 +120,9 @@ The service requires the use of SSL certificates so that GitHub can contact it
 through a webhook. Consequently, this requires an associated domain name for
 this task.
 
+Only change this value if you are not going to use auto-renewed
+certification bots like certbot.
+
 We recommend you use certbot to automatically generate keys for your domain
 name, and keep them up-to-date.
 
@@ -126,10 +131,9 @@ The path must be a folder containing the following two files:
    - cert.pem, the public key exposed to end users/clients
    - privkey.pem, the private key used to encrypt responses to be decoded by
      end users/clients
-
 EOF
-    certificates_path="$(sv_question "Where are the SSL public and private keys located?" \
-                                     "/etc/letsencrypt/live/repocrawler.naucto.net")"
+    certificates_path="`sv_question "Where are the SSL public and private keys located?" \
+                        "$SV_INSTALL_DEFAULT_CERT_PATH"`"
 
     if [ ! -d "$certificates_path" ] || \
        [ ! -f "$certificates_path/cert.pem" ] || \
@@ -158,8 +162,8 @@ outsiders that use the hosted service through HTTPS.
 
 EOF
 
-    private_key_path="$(sv_question "Where is the SSH private key located?" \
-                                    "")"
+    private_key_path="`sv_question "Where is the SSH private key located?" \
+                                   ""`"
 
     if [ -z "$private_key_path" ] || \
        [ ! -f "$private_key_path" ]; then
@@ -184,8 +188,8 @@ Make sure to authenticate your fine-grained GitHub token against the official
 Epitech organization associated with your account.
 
 EOF
-    github_token="$(sv_question "What is the student GitHub token that you want to use?" \
-                                "")"
+    github_token="`sv_question "What is the student GitHub token that you want to use?" \
+                               "")`"
 
     if [ -z "$github_token" ]; then
         echo "$0: No GitHub token provided, cannot continue." >&2
@@ -205,8 +209,8 @@ so we shall specify 'Naucto' for this question.
 
 EOF
 
-    source_organization="$(sv_question "What is the source GitHub organization you want to sync from?" \
-                                       "Naucto")"
+    source_organization="`sv_question "What is the source GitHub organization you want to sync from?" \
+                                      "Naucto"`"
 
     if [ -z "$source_organization" ]; then
         echo "$0: No GitHub source organization specified, cannot continue." >&2
@@ -232,8 +236,8 @@ You only need to specify the following path:
 
 EOF
 
-    target_repository="$(sv_question "What is the target GitHub student repository you want to sync to?" \
-                                     "EpitechPromo2027/G-EIP-600-MPL-6-1-eip-alexis.belmonte")"
+    target_repository="`sv_question "What is the target GitHub student repository you want to sync to?" \
+                                    "EpitechPromo2027/G-EIP-600-MPL-6-1-eip-alexis.belmonte"`"
 
     if [ -z "$target_repository" ]; then
         echo "$0: No GitHub target repository specified, cannot continue." >&2
@@ -284,6 +288,7 @@ After=network.target
 ConditionPathExists=$SV_INSTALL_PATH
 
 [Service]
+User=$SV_SERVICE_USER
 EnvironmentFile=$SV_SERVICE_ENV_PATH
 ExecStart=$SV_SERVICE_SCRIPT_PATH
 KillMode=process
@@ -327,16 +332,19 @@ EOF
     sv_try "Install dependencies in the virtual Python environment." \
            ". $SV_SERVICE_VENV_PATH/bin/activate && pip install -r '$SV_INSTALL_PATH/requirements.txt'"
 
+    sv_try "Add a certificates folder for auto-renewing certificate bots." \
+           "mkdir -p '$SV_INSTALL_DEFAULT_CERT_PATH'"
+
     sv_status_show "Configuring filesystem permissions"
 
-    sv_try "Set ownership of the service installation location to $SV_SERVICE_USER:root" \
+    sv_try "Set ownership of the service installation location to $SV_SERVICE_USER:root." \
            "chown -R '$SV_SERVICE_USER:root' '$SV_INSTALL_PATH'"
-    sv_try "Set permissions of the service installation location" \
+    sv_try "Set permissions of the service installation location." \
            "chmod -R 700 '$SV_INSTALL_PATH'"
 
     sv_status_show "Notifying systemd that a new service has been installed"
 
-    sv_try "Notify systemd that we have installed a new service" \
+    sv_try "Notify systemd that we have installed a new service." \
            "$tool_systemctl daemon-reload"
 
     sv_status_show "Configuring and starting up the service"
@@ -384,7 +392,10 @@ sv_action_update()
         exit 1
     fi
 
-    cp -r "$SV_SERVICE_ENV_PATH" "$SV_SERVICE_VENV_PATH" "$SV_SERVICE_SCRIPT_PATH" "$save_dir_path"
+    cp -r "$SV_SERVICE_ENV_PATH" \
+          "$SV_SERVICE_VENV_PATH" \
+          "$SV_SERVICE_SCRIPT_PATH" \
+          "$save_dir_path"
 
     sv_status_show "Cleaning-up old installation directory"
     sv_try "Clean old installation directory to prepare new installation. Settings and virtual environment are located at '$save_dir_path'." \
@@ -401,7 +412,10 @@ sv_action_update()
     sv_status_show "Moving back the virtual Python environment and settings"
 
     sv_try "Move back the virtual Python environment and settings in the installation location." \
-           "mv '$save_dir_path/$SV_SERVICE_ENV_FNAME' '$SV_SERVICE_ENV_PATH' && mv '$save_dir_path/$SV_SERVICE_VENV_FNAME' '$SV_SERVICE_VENV_PATH' && mv '$save_dir_path/$SV_SERVICE_SCRIPT_FNAME' '$SV_SERVICE_SCRIPT_PATH'"
+           "mv '$save_dir_path/$SV_SERVICE_ENV_FNAME' '$SV_SERVICE_ENV_PATH' && \
+            mv '$save_dir_path/$SV_SERVICE_VENV_FNAME' '$SV_SERVICE_VENV_PATH' && \
+            mv '$save_dir_path/$SV_SERVICE_SCRIPT_FNAME' '$SV_SERVICE_SCRIPT_PATH' && \
+            mv '$save_dir_path/$SV_INSTALL_DEFAULT_CERT_FNAME' '$SV_SERVICE_DEFAULT_CERT_PATH'"
     sv_try "Remove temporary directory that contained the virtual Python environment and settings." \
            "rm -rf '$save_dir_path'"
 
