@@ -1,11 +1,36 @@
 #!/bin/sh
 
-sv_print_usage()
+SV_INSTALL_PATH="/opt/naucto-repository-crawler"
+SV_REPO_PATH="`dirname "$0"`"
+SV_LOCK_PATH="$SV_REPO_PATH/.`basename "$0"`.lock"
+SV_TEMP_PATH="$SV_REPO_PATH/.repo"
+
+SV_SERVICE_NAME="naucto-repository-crawler"
+SV_SERVICE_PATH="/etc/systemd/system/$SV_SERVICE_NAME.service"
+SV_SERVICE_ENV_PATH="$SV_INSTALL_PATH/.env"
+
+sv_require()
+{
+    tool_name="$1"
+    error_message="$2"
+
+    tool_path=`which "$tool_name" 2>&1`
+
+    if [ $? -ne 0 ]; then
+        echo "$0: Cannot find '$tool_name' on your system. $error_message" >&2
+        # Note: As `` spawns a subshell, exit = return.
+        exit 1
+    fi
+
+    echo $tool_path
+}
+
+sv_usage()
 {
     echo "Usage: $0 [-h] [install|uninstall]" >&2
 }
 
-sv_ask_question()
+sv_question()
 {
     question="$1"
     default_value="$2"
@@ -17,7 +42,63 @@ sv_ask_question()
     [ -z "$input_value" ] && echo "$default_value" || echo "$input_value"
 }
 
-sv_install()
+sv_try()
+{
+    why="$1"
+    command="$2"
+
+    tool_output="`sh -c "$command" 2>&1`"
+    tool_status="$?"
+
+    if [ "$tool_status" -ne 0 ]; then
+        echo "$0: Failed to run '$command' (exit status $tool_status)"
+        echo "The installer tried to: $why"
+        echo "The command output: $tool_output"
+
+        exit 1
+    fi
+}
+
+sv_try_as()
+{
+    su_tool="$1"
+    user="$2"
+    why="$3"
+    command="$4"
+
+    sv_try "$why" "echo $command | $su_tool $user"
+}
+
+sv_lock()
+{
+    if [ -f "$SV_LOCK_PATH" ]; then
+        cat >&2 <<EOF
+$0: The installer lock file is already present.
+
+Either another instance of this script is running, or the script has
+prematurely stopped. If you are sure no other instance of this script is
+running, you can delete the lock file with this command:
+
+rm -f '$SV_LOCK_PATH'
+EOF
+
+        exit 1
+    fi
+
+    cp "$0" "$SV_LOCK_PATH"
+}
+
+sv_unlock()
+{
+    rm -f "$SV_LOCK_PATH"
+}
+
+sv_status_show()
+{
+   echo "$@... "
+}
+
+sv_action_install()
 {
     cat >&2 <<EOF
 This assistant will ask you a handful set of questions to install the service
@@ -25,12 +106,6 @@ and its components on this computer.
 
 Default values are shown right besides the question. Press Enter if you want
 to accept said default value, or type in the appropriate value if necessary.
-
-EOF
-
-    # ---
-
-    cat >&2 <<EOF
 
 The service requires the use of SSL certificates so that GitHub can contact it
 through a webhook. Consequently, this requires an associated domain name for
@@ -46,7 +121,7 @@ The path must be a folder containing the following two files:
      end users/clients
 
 EOF
-    certificates_path="$(sv_ask_question "Where are the public and private keys located?" \
+    certificates_path="$(sv_question "Where are the public and private keys located?" \
                                          "/etc/letsencrypt/live/repocrawler.naucto.net")"
 
     if [ ! -d "$certificates_path" ] || \
@@ -73,7 +148,7 @@ Make sure to authenticate your fine-grained GitHub token against the official
 Epitech organization associated with your account.
 
 EOF
-    github_token="$(sv_ask_question "What is the student GitHub token that you want to use?" \
+    github_token="$(sv_question "What is the student GitHub token that you want to use?" \
                                     "")"
 
     if [ -z "$github_token" ]; then
@@ -94,8 +169,8 @@ so we shall specify 'Naucto' for this question.
 
 EOF
 
-    source_organization="$(sv_ask_question "What is the source GitHub organization you want to sync from?" \
-                                           "Naucto")"
+    source_organization="$(sv_question "What is the source GitHub organization you want to sync from?" \
+                                       "Naucto")"
 
     if [ -z "$source_organization" ]; then
         echo "$0: No GitHub source organization specified, cannot continue." >&2
@@ -121,29 +196,136 @@ You only need to specify the following path:
 
 EOF
 
-    target_repository="$(sv_ask_question "What is the target GitHub student repository you want to sync to?" \
-                                         "EpitechPromo2027/G-EIP-600-MPL-6-1-eip-alexis.belmonte")"
+    target_repository="$(sv_question "What is the target GitHub student repository you want to sync to?" \
+                                     "EpitechPromo2027/G-EIP-600-MPL-6-1-eip-alexis.belmonte")"
 
     if [ -z "$target_repository" ]; then
         echo "$0: No GitHub target repository specified, cannot continue." >&2
         exit 1
     fi
+
+    cat >&2 <<EOF
+
+Everything has been collected and the service is now being installed and
+configured.
+
+The service will be installed to '$SV_INSTALL_PATH'.
+
+EOF
+
+    sv_status_show "Downloading service repository and installing it in $SV_INSTALL_PATH"
+
+    sv_try_as "$tool_su" "$sv_repo_userowner" "Clone the service repository to a temporary path." \
+              "$tool_git clone '$sv_repo_url' '$SV_TEMP_PATH'"
+
+    sv_try "Move the cloned repository to the installation path." \
+           "mv '$SV_TEMP_PATH' '$SV_INSTALL_PATH'"
+
+    sv_status_show "Installing the systemd service file"
+
+    cat >"$SV_SERVICE_PATH" <<EOF
+[Unit]
+Description=Naucto Repository Crawler Service
+After=network.target
+ConditionPathExists=$SV_INSTALL_PATH
+
+[Service]
+EnvironmentFile=$SV_SERVICE_ENV_PATH
+ExecStart=$SV_INSTALL_PATH/service.sh start
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=network.target
+EOF
+
+    sv_status_show "Installing the environment file"
+
+    cat >"$SV_SERVICE_ENV_PATH" <<EOF
+LOGURU_LEVEL=TRACE
+
+CW_HOST=1
+CW_HOST_CERT=$certificates_path
+CW_GITHUB_TOKEN=$github_token
+CW_GITHUB_SOURCE=$source_organization
+CW_GITHUB_TARGET=$target_repository
+EOF
+
+    sv_status_show "Notifying systemd that a new service has been installed"
+
+    sv_try "Notify systemd that we have installed a new service" \
+           "$tool_systemctl daemon-reload"
+
+    sv_status_show "Configuring and starting up the service"
+
+    sv_try "Enable the service to automatically start at boot-up." \
+           "$tool_systemctl enable $SV_SERVICE_NAME"
+    sv_try "Start the service to check the installation correctness." \
+           "$tool_systemctl enable $SV_SERVICE_NAME"
 }
 
-sv_uninstall()
+sv_action_uninstall()
 {
     echo "Not yet implemented"
     exit 1
 }
 
+# ---
+
+cd "$SV_REPO_PATH"
+
+tool_git="`sv_require git "This installer uses Git to keep this software up-to-date. Please install it."`"
+tool_systemctl="`sv_require systemctl "This installer does not support non-systemd environments."`"
+tool_su="`sv_require su "This installer requires to switch back-and-forth between a regular & root account to e.g. update the service."`"
+[ -z "$tool_git" ] || [ -z "$tool_systemctl" ] && exit 1
+
+sv_status_show "Determining installation source repository user owner"
+sv_repo_userowner="`stat -c "%U" "$SV_REPO_PATH/.git" 2>/dev/null`"
+
+if [ -z "$sv_repo_userowner" ]; then
+    cat >&2 <<EOF
+$0: Failed to determine the ownership of the repository, cannot continue.
+
+If you have downloaded the repository through the .zip file, please proceed
+again by cloning the repository instead. This allows the installer and the
+service to update itself when necessary.
+EOF
+    exit 1
+fi
+
+sv_repo_url="`"$tool_git" config --get remote.origin.url 2>/dev/null`"
+
+if [ -z "$sv_repo_url" ]; then
+    cat >&2 <<EOF
+$0: Failed to get the remote origin URL of the repository, cannot continue.
+
+If you have downloaded the repository through the .zip file, please proceed
+again by cloning the repository instead. This allows the installer and the
+service to update itself when necessary.
+EOF
+    exit 1
+fi
+
+sv_lock
+
+sv_status_show "Checking for updates on the repository"
+sv_try_as "$tool_su" "$sv_repo_userowner" "Attempt to pull the tool's repository to keep the installer up-to-date" \
+          "$tool_git pull"
+
+sv_try "Check if the installer has changed. Please reload the script." \
+       "diff '$0' '$SV_LOCK_PATH'"
+
+sv_unlock
+
 cat <<EOF
+
 Naucto Repository Crawler service installer script
 Copyright (C) 2025 Naucto - Under the MIT license. See license.txt for more details.
 
 EOF
 
 if [ "$#" -ne 1 ]; then
-    sv_print_usage
+    sv_usage
     exit 1
 fi
 
@@ -157,7 +339,7 @@ system.
 
 EOF
 
-    sv_print_usage
+    sv_usage
    
     cat >&2 <<EOF
 Options:
@@ -186,12 +368,12 @@ fi
 
 case "$primary_command" in
     install)
-        sv_install $@
+        sv_action_install $@
         exit $?
         ;;
 
     uninstall)
-        sv_uninstall $@
+        sv_action_uninstall $@
         exit $?
         ;;
 esac
