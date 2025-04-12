@@ -20,18 +20,6 @@ target = os.getenv("CW_GITHUB_TARGET")
 host      = bool(os.getenv("CW_HOST", None))
 host_cert = os.getenv("CW_HOST_CERT", None)
 
-if os.getuid() != 0:
-    L.error("Naucto's Repository Crawler must start as root.")
-
-try:
-    ncr_pwnam = pwd.getpwnam(CW_TARGET_USER)
-except KeyError:
-    L.error("User '{}' does not exist on the system, cannot continue.")
-
-os.setgid(ncr_pwnam.pw_gid)
-os.setuid(ncr_pwnam.pw_uid)
-L.info("Switching active user to '{}'", CW_TARGET_USER)
-
 if host:
     L.info("Starting as a self-sustaining updater through a webhook endpoint.")
 
@@ -48,6 +36,9 @@ elif not target:
 crawler = Crawler(token, source, target)
 
 if host:
+    if os.getuid() != 0:
+        L.error("Naucto's Repository Crawler must start as root when running as a host.")
+
     if not host_cert:
         L.error("No HTTPS certificate path provided. Please set `CW_HOST_CERT` and try agian.")
         exit(1)
@@ -56,6 +47,16 @@ if host:
     host_cert_key  = os.path.join(host_cert, "privkey.pem")
 
     listener = WebhookListener(crawler, host_cert=(host_cert_base, host_cert_key))
+
+    try:
+        ncr_pwnam = pwd.getpwnam(CW_TARGET_USER)
+    except KeyError:
+        L.error("User '{}' does not exist on the system, cannot continue.")
+
+    os.setgid(ncr_pwnam.pw_gid)
+    os.setuid(ncr_pwnam.pw_uid)
+    L.info("Switching active user to '{}'", CW_TARGET_USER)
+
     listener.run()
 else:
     crawler.crawl()
