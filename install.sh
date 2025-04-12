@@ -6,6 +6,7 @@ SV_INSTALL_PATH="/opt/naucto-repository-crawler"
 SV_LOCK_PATH="$SV_REPO_PATH/.`basename "$0"`.lock"
 SV_TEMP_PATH="$SV_REPO_PATH/.repo"
 
+SV_SERVICE_USER="nrc"
 SV_SERVICE_NAME="naucto-repository-crawler"
 SV_SERVICE_PATH="/etc/systemd/system/$SV_SERVICE_NAME.service"
 SV_SERVICE_SCRIPT_FNAME="service.sh"
@@ -128,7 +129,7 @@ The path must be a folder containing the following two files:
 
 EOF
     certificates_path="$(sv_question "Where are the public and private keys located?" \
-                                         "/etc/letsencrypt/live/repocrawler.naucto.net")"
+                                     "/etc/letsencrypt/live/repocrawler.naucto.net")"
 
     if [ ! -d "$certificates_path" ] || \
        [ ! -f "$certificates_path/cert.pem" ] || \
@@ -138,6 +139,33 @@ EOF
     fi
 
     # ---
+
+    if id -u "$SV_SERVICE_USER" >/dev/null 2>/dev/null; then
+        cat >&2 <<EOF
+
+As we indirectly use 'git' and 'ssh' by extension, we require the service to
+have a SSH private key.
+
+As an Epitech student, you need to generate a public and private key
+associated to your user account and authenticated to single sign-on.
+
+Since this is risky, we HIGHLY recommend you to generate a separate key pair,
+distinct from your work key pair.
+
+The private key will not be exposed to the users of this machine nor to the
+outsiders that use the hosted service through HTTPS.
+
+EOF
+
+        private_key_path="$(sv_question "Where is the SSH private key located?" \
+                                        "")"
+
+        if [ -z "$private_key_path" ] || \
+           [ ! -f "$private_key_path" ]; then
+            echo "$0: Bad SSH private key path passed, cannot continue." >&2
+            exit 1
+        fi
+    fi
 
     cat >&2 <<EOF
 
@@ -155,7 +183,7 @@ Epitech organization associated with your account.
 
 EOF
     github_token="$(sv_question "What is the student GitHub token that you want to use?" \
-                                    "")"
+                                "")"
 
     if [ -z "$github_token" ]; then
         echo "$0: No GitHub token provided, cannot continue." >&2
@@ -219,6 +247,20 @@ The service will be installed to '$SV_INSTALL_PATH'.
 
 EOF
 
+    sv_status_show "Setup a dedicated service user for systemd"
+
+    if ! id -u "$SV_SERVICE_USER" >/dev/null 2>/dev/null; then
+        sv_try "Create a dedicated service user" \
+               "$tool_useradd -m $SV_SERVICE_USER"i
+    fi
+
+    sv_try_as "$tool_su" "$SV_SERVICE_USER" "Create the SSH directory" \
+              "mkdir -p '~/.ssh'"
+    sv_try_as "$tool_su" "$SV_SERVICE_USER" "Copy the SSH private key over to the dedicated service user" \
+              "cp '$private_key_path' '~/.ssh/id_ed25519'"
+    sv_try_as "$tool_su" "$SV_SERVICE_USER" "Discover the SSH private key" \
+              "ssh-keyscan -H github.com >> ~/.ssh/known_hosts"
+
     sv_status_show "Downloading service repository and installing it in $SV_INSTALL_PATH"
 
     sv_try_as "$tool_su" "$sv_repo_userowner" "Clone the service repository to a temporary path." \
@@ -236,6 +278,7 @@ After=network.target
 ConditionPathExists=$SV_INSTALL_PATH
 
 [Service]
+User=$SV_SERVICE_USER
 EnvironmentFile=$SV_SERVICE_ENV_PATH
 ExecStart=$SV_SERVICE_SCRIPT_PATH
 KillMode=process
@@ -290,10 +333,12 @@ EOF
            "$tool_systemctl enable $SV_SERVICE_NAME"
     sv_try "Start the service on the machine." \
            "$tool_systemctl start $SV_SERVICE_NAME"
+
+    sv_status_show "Waiting for the service to boot-up"
+    sleep 3
+
     sv_try "Check if the service is alive and well on the machine." \
            "$tool_systemctl is-active $SV_SERVICE_NAME"
-
-    sv_status_show ""
 
     cat <<EOF
 
@@ -387,11 +432,13 @@ tool_git="`sv_require git "This installer uses Git to keep this software up-to-d
 tool_systemctl="`sv_require systemctl "This installer does not support non-systemd environments."`"
 tool_su="`sv_require su "This installer requires to switch back-and-forth between a regular & root account to e.g. update the service."`"
 tool_python="`sv_require python3 "The service requires Python 3.11+ along with venv + pip support to run on this machine"`"
+tool_useradd="`sv_require useradd "The service requires a user to be created"`"
 
 [ -z "$tool_git" ] || \
 [ -z "$tool_systemctl" ] || \
 [ -z "$tool_su" ] || \
-[ -z "$tool_python" ] && exit 1
+[ -z "$tool_python" ] || \
+[ -z "$tool_useradd" ] && exit 1
 
 sv_status_show "Determining installation source repository user owner"
 sv_repo_userowner="`stat -c "%U" "$SV_REPO_PATH/.git" 2>/dev/null`"
