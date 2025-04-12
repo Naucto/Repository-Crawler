@@ -128,7 +128,7 @@ The path must be a folder containing the following two files:
      end users/clients
 
 EOF
-    certificates_path="$(sv_question "Where are the public and private keys located?" \
+    certificates_path="$(sv_question "Where are the SSL public and private keys located?" \
                                      "/etc/letsencrypt/live/repocrawler.naucto.net")"
 
     if [ ! -d "$certificates_path" ] || \
@@ -140,7 +140,7 @@ EOF
 
     # ---
 
-    if id -u "$SV_SERVICE_USER" >/dev/null 2>/dev/null; then
+    if ! id -u "$SV_SERVICE_USER" >/dev/null 2>/dev/null; then
         cat >&2 <<EOF
 
 As we indirectly use 'git' and 'ssh' by extension, we require the service to
@@ -165,6 +165,8 @@ EOF
             echo "$0: Bad SSH private key path passed, cannot continue." >&2
             exit 1
         fi
+
+        private_key_path="`realpath "$private_key_path"`"
     fi
 
     cat >&2 <<EOF
@@ -251,7 +253,7 @@ EOF
 
     if ! id -u "$SV_SERVICE_USER" >/dev/null 2>/dev/null; then
         sv_try "Create a dedicated service user" \
-               "$tool_useradd -m $SV_SERVICE_USER"i
+               "$tool_useradd -m $SV_SERVICE_USER"
     fi
 
     sv_try_as "$tool_su" "$SV_SERVICE_USER" "Create the SSH directory" \
