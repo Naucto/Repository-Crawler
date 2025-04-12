@@ -138,6 +138,8 @@ EOF
         exit 1
     fi
 
+    certificates_path="`realpath "$certificates_path"`"    
+
     # ---
 
     if ! id -u "$SV_SERVICE_USER" >/dev/null 2>/dev/null; then
@@ -160,7 +162,7 @@ EOF
         private_key_path="$(sv_question "Where is the SSH private key located?" \
                                         "")"
 
-        if [ -z "$private_key_path" ] || \
+        if [ -z "$private_key_path" ] || \
            [ ! -f "$private_key_path" ]; then
             echo "$0: Bad SSH private key path passed, cannot continue." >&2
             exit 1
@@ -249,7 +251,7 @@ The service will be installed to '$SV_INSTALL_PATH'.
 
 EOF
 
-    sv_status_show "Setup a dedicated service user for systemd"
+    sv_status_show "Setting-up a dedicated service user for systemd"
 
     if ! id -u "$SV_SERVICE_USER" >/dev/null 2>/dev/null; then
         sv_try "Create a dedicated service user" \
@@ -258,8 +260,12 @@ EOF
 
     sv_try_as "$tool_su" "$SV_SERVICE_USER" "Create the SSH directory" \
               "mkdir -p '~/.ssh'"
-    sv_try_as "$tool_su" "$SV_SERVICE_USER" "Copy the SSH private key over to the dedicated service user" \
-              "cp '$private_key_path' '~/.ssh/id_ed25519'"
+    sv_try "Copy the SSH private key over to the dedicated service user" \
+           "cp '$private_key_path' '/home/$SV_SERVICE_USER/.ssh/id_ed25519'"
+    sv_try "Configure SSH private key file ownership" \
+           "chown $SV_SERVICE_USER:$SV_SERVICE_USER '/home/$SV_SERVICE_USER/.ssh/id_ed25519'"
+    sv_try "Configure SSH private key file permissions" \
+           "chmod 700 '/home/$SV_SERVICE_USER/.ssh/id_ed25519'"
     sv_try_as "$tool_su" "$SV_SERVICE_USER" "Discover the SSH private key" \
               "ssh-keyscan -H github.com >> ~/.ssh/known_hosts"
 
@@ -324,6 +330,13 @@ EOF
     sv_try "Install dependencies in the virtual Python environment." \
            ". $SV_SERVICE_VENV_PATH/bin/activate && pip install -r '$SV_INSTALL_PATH/requirements.txt'"
 
+    sv_status_show "Configuring filesystem permissions"
+
+    sv_try "Set ownership of the service installation location to $SV_SERVICE_USER" \
+           "chown -R '$SV_SERVICE_USER:$SV_SERVICE_USER' '$SV_INSTALL_PATH'"
+    sv_try "Set permissions of the service installation location" \
+           "chmod -R 700 '$SV_INSTALL_PATH'"
+
     sv_status_show "Notifying systemd that a new service has been installed"
 
     sv_try "Notify systemd that we have installed a new service" \
@@ -337,7 +350,7 @@ EOF
            "$tool_systemctl start $SV_SERVICE_NAME"
 
     sv_status_show "Waiting for the service to boot-up"
-    sleep 3
+    sleep 6
 
     sv_try "Check if the service is alive and well on the machine." \
            "$tool_systemctl is-active $SV_SERVICE_NAME"
