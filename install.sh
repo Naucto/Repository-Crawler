@@ -268,8 +268,8 @@ EOF
            "chown $SV_SERVICE_USER:$SV_SERVICE_USER '/home/$SV_SERVICE_USER/.ssh/id_ed25519'"
     sv_try "Configure SSH private key file permissions" \
            "chmod 700 '/home/$SV_SERVICE_USER/.ssh/id_ed25519'"
-    sv_try_as "$tool_su" "$SV_SERVICE_USER" "Discover the SSH private key" \
-              "ssh-keyscan -H github.com >> /home/$SV_SERVICE_USER/.ssh/known_hosts"
+    sv_try_as "$tool_su" "$SV_SERVICE_USER" "Discover known hosts associated to GitHub" \
+              "ssh-keyscan -t rsa github.com >/home/$SV_SERVICE_USER/.ssh/known_hosts 2>&1"
 
     sv_status_show "Downloading service repository and installing it in $SV_INSTALL_PATH"
 
