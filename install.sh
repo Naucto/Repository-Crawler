@@ -269,7 +269,7 @@ EOF
     sv_try "Configure SSH private key file permissions" \
            "chmod 700 '/home/$SV_SERVICE_USER/.ssh/id_ed25519'"
     sv_try_as "$tool_su" "$SV_SERVICE_USER" "Discover the SSH private key" \
-              "ssh-keyscan -H github.com >> /home/$SV_SERVICVE_USER/.ssh/known_hosts"
+              "ssh-keyscan -H github.com >> /home/$SV_SERVICE_USER/.ssh/known_hosts"
 
     sv_status_show "Downloading service repository and installing it in $SV_INSTALL_PATH"
 
