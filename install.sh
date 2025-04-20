@@ -441,6 +441,7 @@ EOF
 
 sv_action_uninstall()
 {
+    # FIXME: Need to do this e.g. on a separate machine?
     echo "Not yet implemented"
     exit 1
 }
