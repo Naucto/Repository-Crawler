@@ -136,7 +136,7 @@ EOF
                         "$SV_INSTALL_DEFAULT_CERT_PATH"`"
 
     if [ ! -d "$certificates_path" ] || \
-       [ ! -f "$certificates_path/cert.pem" ] || \
+       [ ! -f "$certificates_path/fullchain.pem" ] || \
        [ ! -f "$certificates_path/privkey.pem" ]; then
         echo "$0: Bad certificates path passed, cannot continue." >&2
         exit 1
@@ -269,15 +269,29 @@ EOF
     sv_try "Configure SSH private key file permissions" \
            "chmod 700 '/home/$SV_SERVICE_USER/.ssh/id_ed25519'"
     sv_try_as "$tool_su" "$SV_SERVICE_USER" "Discover the SSH private key" \
-              "ssh-keyscan -H github.com >> ~/.ssh/known_hosts"
+              "ssh-keyscan -H github.com >> /home/$SV_SERVICVE_USER/.ssh/known_hosts"
 
     sv_status_show "Downloading service repository and installing it in $SV_INSTALL_PATH"
+
+    if [ -d "$SV_TEMP_PATH" ]; then
+        sv_try "Remove the old service repository from the temporary path." \
+               "rm -rf '$SV_TEMP_PATH'"
+    fi
 
     sv_try_as "$tool_su" "$sv_repo_userowner" "Clone the service repository to a temporary path." \
               "$tool_git clone '$sv_repo_url' '$SV_TEMP_PATH'"
 
-    sv_try "Move the cloned repository to the installation path." \
-           "mv '$SV_TEMP_PATH' '$SV_INSTALL_PATH'"
+    if [ -d "$SV_INSTALL_PATH" ]; then
+        sv_try "Mirror the hierarchy of the cloned repository to the installation path." \
+               "(cd '$SV_TEMP_PATH' && find . -mindepth 1 -type d -exec mkdir -p $SV_INSTALL_PATH/{} \;)"
+        sv_try "Move the contents of the cloned repository to the installation path." \
+               "(cd '$SV_TEMP_PATH' && find . -mindepth 1 -type f -exec mv {} $SV_INSTALL_PATH/{} \;)"
+        sv_try "Remove the directory from the previously cloned repository." \
+               "rm -rf '$SV_TEMP_PATH'"
+    else
+        sv_try "Move the cloned repository to the installation path." \
+               "mv '$SV_TEMP_PATH' '$SV_INSTALL_PATH'"
+    fi
 
     sv_status_show "Installing the systemd service file"
 
@@ -359,7 +373,7 @@ EOF
     sv_try "Check if the service is alive and well on the machine." \
            "$tool_systemctl is-active $SV_SERVICE_NAME"
 
-    cat <<EOF
+    cat >&2 <<EOF
 
 Congratulations! The Naucto Repository Crawler service is now up and running on
 your machine.
@@ -441,9 +455,50 @@ EOF
 
 sv_action_uninstall()
 {
-    # FIXME: Need to do this e.g. on a separate machine?
-    echo "Not yet implemented"
-    exit 1
+    if [ ! -f "$SV_SERVICE_ENV_PATH" ]; then
+        cat >&2 <<EOF
+NOTE: The service is not installed on this system. We'll still allow you to
+proceed to the uninstallation if you have remnants, but please report issues
+like this. A link will be available at the end of the process.
+
+EOF
+    fi
+
+    cat >&2 <<EOF
+ATTENTION! You are about to uninstall the repository crawler service. All files
+and the associated service user will be removed from this machine.
+
+EOF
+    uninstall_question="`sv_question "Type in 'UNINSTALL' without quotes, all caps to confirm" \
+                         ""`"
+
+    if [ "$uninstall_question" != "UNINSTALL" ]; then
+        echo "$0: Question unanswered incorrectly, cancelling." >&2
+        exit 1
+    fi
+
+    echo
+
+    sv_status_show "Stopping the executing service if it is still running and disable it"
+    $tool_systemctl stop "$SV_SERVICE_NAME" >/dev/null 2>/dev/null
+    $tool_systemctl disable "$SV_SERVICE_NAME" >/dev/null 2>/dev/null
+
+    sv_status_show "Uninstalling service software & system files"
+    rm -rf "$SV_INSTALL_PATH" "$SV_SERVICE_PATH"
+
+    sv_status_show "Reloading systemd daemon"
+    sv_try "Notify systemd that we have removed a service." \
+           "$tool_systemctl daemon-reload"
+
+    sv_status_show "Removing service user"
+    $tool_userdel --remove "$SV_SERVICE_USER" >/dev/null 2>/dev/null
+
+    cat >&2 <<EOF
+
+Done uninstalling the repository crawler service. Goodbye world! :]
+
+Report any issues here: https://github.com/Naucto/Repository-Crawler/issues
+EOF
 }
 
 # ---
@@ -459,13 +514,15 @@ tool_git="`sv_require git "This installer uses Git to keep this software up-to-d
 tool_systemctl="`sv_require systemctl "This installer does not support non-systemd environments."`"
 tool_su="`sv_require su "This installer requires to switch back-and-forth between a regular & root account to e.g. update the service."`"
 tool_python="`sv_require python3 "The service requires Python 3.11+ along with venv + pip support to run on this machine"`"
-tool_useradd="`sv_require useradd "The service requires a user to be created"`"
+tool_useradd="`sv_require useradd "The service requires a user to be created when installing"`"
+tool_userdel="`sv_require userdel "The service requires a user to be deleted when uninstalling"`"
 
 [ -z "$tool_git" ] || \
 [ -z "$tool_systemctl" ] || \
 [ -z "$tool_su" ] || \
 [ -z "$tool_python" ] || \
-[ -z "$tool_useradd" ] && exit 1
+[ -z "$tool_useradd" ] || \
+[ -z "$tool_userdel" ] && exit 1
 
 sv_status_show "Determining installation source repository user owner"
 sv_repo_userowner="`stat -c "%U" "$SV_REPO_PATH/.git" 2>/dev/null`"
