@@ -282,11 +282,9 @@ EOF
               "$tool_git clone '$sv_repo_url' '$SV_TEMP_PATH'"
 
     if [ -d "$SV_INSTALL_PATH" ]; then
-        sv_try "Mirror the hierarchy of the cloned repository to the installation path." \
-               "(cd '$SV_TEMP_PATH' && find . -mindepth 1 -type d -exec mkdir -p $SV_INSTALL_PATH/{} \;)"
-        sv_try "Move the contents of the cloned repository to the installation path." \
-               "(cd '$SV_TEMP_PATH' && find . -mindepth 1 -type f -exec mv {} $SV_INSTALL_PATH/{} \;)"
-        sv_try "Remove the directory from the previously cloned repository." \
+        sv_try "Duplicate the cloned repository to the installation path." \
+               "cp -rf '$SV_TEMP_PATH'/* '$SV_TEMP_PATH/.git' '$SV_INSTALL_PATH'"
+        sv_try "Remove the old service repository from the temporary path." \
                "rm -rf '$SV_TEMP_PATH'"
     else
         sv_try "Move the cloned repository to the installation path." \
