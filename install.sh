@@ -291,7 +291,6 @@ ConditionPathExists=$SV_INSTALL_PATH
 User=$SV_SERVICE_USER
 EnvironmentFile=$SV_SERVICE_ENV_PATH
 ExecStart=$SV_SERVICE_SCRIPT_PATH
-KillMode=process
 Restart=on-failure
 
 [Install]
@@ -320,7 +319,7 @@ SV_ENV_PATH="$SV_SERVICE_VENV_PATH"
 
 . "\$SV_ENV_PATH/bin/activate"
 
-python3 "$SV_INSTALL_PATH/main.py"
+python3 -B "$SV_INSTALL_PATH/main.py"
 EOF
     chmod +x "$SV_INSTALL_PATH/service.sh"
 
@@ -395,6 +394,7 @@ sv_action_update()
     cp -r "$SV_SERVICE_ENV_PATH" \
           "$SV_SERVICE_VENV_PATH" \
           "$SV_SERVICE_SCRIPT_PATH" \
+          "$SV_INSTALL_DEFAULT_CERT_PATH" \
           "$save_dir_path"
 
     sv_status_show "Cleaning-up old installation directory"
@@ -415,7 +415,7 @@ sv_action_update()
            "mv '$save_dir_path/$SV_SERVICE_ENV_FNAME' '$SV_SERVICE_ENV_PATH' && \
             mv '$save_dir_path/$SV_SERVICE_VENV_FNAME' '$SV_SERVICE_VENV_PATH' && \
             mv '$save_dir_path/$SV_SERVICE_SCRIPT_FNAME' '$SV_SERVICE_SCRIPT_PATH' && \
-            mv '$save_dir_path/$SV_INSTALL_DEFAULT_CERT_FNAME' '$SV_SERVICE_DEFAULT_CERT_PATH'"
+            mv '$save_dir_path/$SV_INSTALL_DEFAULT_CERT_FNAME' '$SV_INSTALL_DEFAULT_CERT_PATH'"
     sv_try "Remove temporary directory that contained the virtual Python environment and settings." \
            "rm -rf '$save_dir_path'"
 
