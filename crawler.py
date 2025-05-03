@@ -16,6 +16,8 @@ import datetime
 
 
 class Crawler:
+    CRAWLER_ROOT_REPO = ".crawler"
+
     def __init__(self, token: str, source_organization: str, target_repository: str,
                        working_directory_path: str | None = None,
                        target_directory_path: str | None = None):
@@ -72,7 +74,12 @@ class Crawler:
                      for member in tarball.getmembers():
                          initial_path = member.name
                          member.name = member.name.replace(root_folder_name, '', 1)[1:]
-                         target_path = os.path.join(repo_local_path, member.name)
+
+                         if root_folder_name.startswith(".") and root_folder_name != self.CRAWLER_ROOT_REPO:
+                             L.debug("Repository {} is considered as hidden (starting with .), skipping")
+                             continue
+                         else:
+                             target_path = os.path.join(repo_local_path, member.name)
 
                          L.trace("Extracting member {} -> {}", initial_path, target_path)
                          tarball.extract(member, path=repo_local_path)
@@ -99,13 +106,15 @@ class Crawler:
 
         for item in os.listdir(self.working_directory.name):
             item_path = os.path.join(self.working_directory.name, item)
-            target_path = os.path.join(self.target_directory.name, item)
+
+            if item == self.CRAWLER_ROOT_REPO:
+                L.debug("Detected crawler meta repository, target path will be set to the root of the directory rather than its subdirectory")
+                target_path = self.target_directory.name
+            else:
+                target_path = os.path.join(self.target_directory.name, item)
 
             L.trace("Copying item {} -> {}", item_path, target_path)
-            if os.path.isdir(item_path):
-                shutil.copytree(item_path, target_path)
-            else:
-                shutil.copy2(item_path, target_path)
+            shutil.copytree(item_path, target_path, dirs_exist_ok=True)
 
         target_repo.index.add("*")
 
