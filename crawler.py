@@ -116,18 +116,12 @@ class Crawler:
             L.trace("Copying item {} -> {}", item_path, target_path)
             shutil.copytree(item_path, target_path, dirs_exist_ok=True)
 
-        target_repo.index.add("*")
-
-        if not target_repo.index.diff("HEAD"):
-            L.info("No changes detected, not commiting to target repository")
-            return
-
         L.debug("Added all files to the index, {} files in total", len(target_repo.index.entries))
 
         target_commit_summary: str = ""
 
         if target_repo.head.is_valid():
-            L.debug("Target repository has at least one commit, preparing commit summary")
+            L.debug("Target repository has at least one commit, preparing commit")
 
             diff_name_status = target_repo.git.diff('HEAD', '--name-status')
             diff_numstat = target_repo.git.diff('HEAD', '--numstat')
@@ -138,11 +132,17 @@ class Crawler:
                 parts = line.split("\t")
                 change_type = parts[0]
 
-                if change_type.startswith("R"):
-                    if len(parts) >= 3:
-                        rename_changes.append(f"{parts[1]} -> {parts[2]}")
+                if change_type.startswith("R") and len(parts) >= 3:
+                    rename_changes.append(f"{parts[1]} -> {parts[2]}")
+                    target_repo.index.add(parts[1])
+                    target_repo.index.remove(parts[2])
                 elif change_type in file_changes:
                     file_changes[change_type].append(parts[1])
+
+                    if change_type == "A" or change_type == "M":
+                        target_repo.index.add(parts[1])
+                    elif change_type == "D":
+                        target_repo.index.remove(parts[1])
 
             total_additions = 0
             total_deletions = 0
@@ -169,6 +169,10 @@ class Crawler:
 
             if rename_changes:
                 target_commit_summary += f"\nFiles renamed: {', '.join(rename_changes)}\n"
+
+            if not file_changes:
+                L.info("No changes detected, not commiting to target repository")
+                return
         else:
             L.debug("Target repository has no commits, using default commit summary")
             target_commit_summary = "Initial commit"
