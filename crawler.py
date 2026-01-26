@@ -132,6 +132,8 @@ class Crawler:
                 parts = line.split("\t")
                 change_type = parts[0]
 
+                L.trace("Examining change '{}'", line)
+
                 if change_type.startswith("R") and len(parts) >= 3:
                     rename_changes.append(f"{parts[1]} -> {parts[2]}")
                     target_repo.index.add(parts[1])
