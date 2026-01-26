@@ -123,9 +123,12 @@ class Crawler:
         if target_repo.head.is_valid():
             L.debug("Target repository has at least one commit, preparing commit")
 
+            for file in target_repo.untracked_files:
+                target_repo.index.add(file)
+
             diff_name_status = target_repo.git.diff('HEAD', '--name-status')
             diff_numstat = target_repo.git.diff('HEAD', '--numstat')
-
+            
             file_changes = {"A": [], "M": [], "D": []}
             rename_changes = []
             for line in diff_name_status.splitlines():
@@ -178,6 +181,11 @@ class Crawler:
         else:
             L.debug("Target repository has no commits, using default commit summary")
             target_commit_summary = "Initial commit"
+
+            for file in target_repo.untracked_files:
+                target_repo.index.add(file)
+
+        target_repo.git.status
 
         target_commit_date = datetime.datetime.now(tz=datetime.timezone.utc)
         target_commit_message = f"""Mirror of {self.source} on {target_commit_date.isoformat()}
